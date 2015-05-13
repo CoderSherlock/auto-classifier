@@ -25,7 +25,7 @@ public class ReadFactory {
 	public CategoryStorage categoryStorage = new CategoryStorage();
 	public PatentStorage patentStorage = new PatentStorage();
 
-	public static int THRESHOLD = 6;
+	public static int THRESHOLD = 5001;
 
 	public void readFiles() throws ClassNotFoundException, SQLException {
 		this.categoryStorage.count = categoryStorage.readFromsql(this);
@@ -186,6 +186,44 @@ public class ReadFactory {
 			System.out.println(++timer1);
 		}
 		updateVector2SQL();
+	}
+
+	public HashMap<Integer, Vector> bClassify = new HashMap<Integer, Vector>();
+
+	public void TFIDF4single(int father, int patentid) {
+		List<Integer> tmpPatents = new ArrayList<Integer>();
+		Vector basic = new Vector();
+		for (CategoryNodeStorage node : categoryStorage.index) {
+			if (node.fatherid == father) {
+				tmpPatents.addAll(node.patents);
+				basic = node.vector;
+			}
+		}
+		tmpPatents.add(patentid);
+		for (Integer integer : tmpPatents) {
+			Vector v = new Vector();
+			Iterator<?> it1 = basic.vector.keySet().iterator();
+			while (it1.hasNext()) {
+				String word = (String) it1.next();
+				if (vec.get(integer).containsKey(word)) {
+					int wordAppear = vec.get(integer).get(word);
+					double wordFrequency = (double) wordAppear
+							/ vecCount.get(integer);
+
+					// TDIDF meaningless
+
+					double TFIDF = wordFrequency;
+					v.vector.put(word, TFIDF);
+				} else {
+					v.vector.put(word, (double) 0);
+				}
+			}
+			bClassify.put(integer, v);
+		}
+	}
+
+	public void TFIDF4all(int father) {
+
 	}
 
 	public void updateVector2SQL() throws Exception {
@@ -386,15 +424,108 @@ public class ReadFactory {
 					todo.add(node.id);
 				}
 			}
-			System.out.println(++timer1);
+			// System.out.println(++timer1);
+		}
+	}
+
+	public void TFIDFExtraction() throws Exception {
+		fulfillVec();
+		Queue<Integer> todo = new LinkedList<Integer>();
+		todo.add(-1);
+
+		int timer1 = 0;
+		while (!todo.isEmpty()) {
+			int father = todo.poll();
+			String mainString = AbstructSummary(father);
+			HashMap<String, Integer> mainHash = new TextParser()
+					.luceneTokenizer(mainString);
+			HashMap<String, Double> mainCal = new HashMap<String, Double>();
+			int maincount = 0;
+			Iterator<?> itmain = mainHash.keySet().iterator();
+			while (itmain.hasNext()) {
+				String word = (String) itmain.next();
+				maincount += mainHash.get(word);
+			}
+
+			List<Integer> children = new ArrayList<Integer>();
+			for (CategoryNodeStorage node : categoryStorage.index) {
+				if (node.fatherid == father) {
+					children.add(node.id);
+				}
+			}
+
+			HashMap<Integer, HashMap<String, Integer>> childrenHashMap = new HashMap<Integer, HashMap<String, Integer>>();
+			for (CategoryNodeStorage node : categoryStorage.index) {
+				if (node.fatherid == father) {
+					childrenHashMap.put(node.id, new TextParser()
+							.luceneTokenizer(AbstructSummary(node.id)));
+				}
+			}
+			Iterator<?> it1 = childrenHashMap.keySet().iterator();
+			while (it1.hasNext()) {
+				int a = (Integer) it1.next();
+				Iterator<?> it2 = childrenHashMap.get(a).keySet().iterator();
+				int allcount = 0;
+				while (it2.hasNext()) {
+					String word = (String) it2.next();
+					allcount += childrenHashMap.get(a).get(word);
+
+				}
+				double tf = 0;
+				double idf = 0;
+				Iterator<?> it3 = childrenHashMap.get(a).keySet().iterator();
+				while (it3.hasNext()) {
+					String word = (String) it3.next();
+					int tmpcount = childrenHashMap.get(a).get(word);
+					tf = tmpcount / allcount;
+					idf = Math.log(maincount
+							/ (mainHash.get(word) - tmpcount + 1));
+					double tfidf = tf * idf;
+					if (mainCal.containsKey(word)) {
+						if (tfidf > mainCal.get(word))
+							mainCal.put(word, tfidf);
+					} else {
+						mainCal.put(word, tfidf);
+					}
+				}
+			}
+			List<Map.Entry<String, Double>> list_Data = new ArrayList<Map.Entry<String, Double>>(
+					mainCal.entrySet());
+			Collections.sort(list_Data,
+					new Comparator<Map.Entry<String, Double>>() {
+						public int compare(Map.Entry<String, Double> o1,
+								Map.Entry<String, Double> o2) {
+							if ((o2.getValue() - o1.getValue()) > 0)
+								return -1;
+							else if ((o2.getValue() - o1.getValue()) == 0)
+								return 0;
+							else
+								return 1;
+						}
+					});
+
+			for (int i = 0, j = list_Data.size(); i < j && i < THRESHOLD - 1; i++) {
+				for (int k : children) {
+					String fuck = list_Data.get(i).getKey();
+					categoryStorage.index.get(k).vector.vector.put(fuck,
+							(double) 0);
+
+				}
+			}
+			for (CategoryNodeStorage node : categoryStorage.index) {
+				if (node.fatherid == father
+						&& categoryStorage.hasChild(node.id)) {
+					todo.add(node.id);
+				}
+			}
 		}
 	}
 
 	public void fulfillVec() throws Exception {
 		vec.clear();
 		for (PatentNodeStorage node : patentStorage.Patents) {
-			if (node.category != -1)
-				vec.add(new TextParser().luceneTokenizer(node.abstruct));
+			// if (node.category != -1)
+			vec.add(new TextParser().luceneTokenizer(node.abstruct));
 
 		}
 		for (int i = 0, j = vec.size(); i < j; i++) {

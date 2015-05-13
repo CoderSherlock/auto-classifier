@@ -293,7 +293,7 @@ public class main {
 			public void mousePressed(MouseEvent e) {
 				try {
 					v.IG();
-					v.TFIDF();
+					//v.TFIDF();
 					JOptionPane.showMessageDialog(null,
 							"Learning Procedure Finished", "Finished",
 							JOptionPane.INFORMATION_MESSAGE);
